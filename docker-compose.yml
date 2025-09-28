@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  homepage-service:
+    build: ./backend/homepage
+    ports:
+      - "5000:5000"
+    networks:
+      - cartella-network
+
+  account-service:
+    build: ./backend/account
+    ports:
+      - "5001:5001"
+    networks:
+      - cartella-network
+
+  cart-service:
+    build: ./backend/cart
+    ports:
+      - "5002:5002"
+    networks:
+      - cartella-network
+
+  checkout-service:
+    build: ./backend/checkout
+    ports:
+      - "5003:5003"
+    networks:
+      - cartella-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - .:/usr/share/nginx/html
+    depends_on:
+      - homepage-service
+      - account-service
+      - cart-service
+      - checkout-service
+    networks:
+      - cartella-network
+
+networks:
+  cartella-network:
+    driver: bridge
