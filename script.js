@@ -1,51 +1,15 @@
-// Products data
-const products = [
-    {
-        id: 1,
-        name: "Wireless Bluetooth Headphones",
-        price: 79.99,
-        image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
-        description: "High-quality wireless headphones with noise cancellation"
-    },
-    {
-        id: 2,
-        name: "Smartphone 128GB",
-        price: 699.99,
-        image: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1480&q=80",
-        description: "Latest smartphone with advanced camera and fast processor"
-    },
-    {
-        id: 3,
-        name: "Laptop 15-inch",
-        price: 999.99,
-        image: "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1471&q=80",
-        description: "Powerful laptop for work and entertainment"
-    },
-    {
-        id: 4,
-        name: "Smart Watch",
-        price: 199.99,
-        image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1399&q=80",
-        description: "Feature-rich smartwatch with health monitoring"
-    },
-    {
-        id: 5,
-        name: "Digital Camera",
-        price: 549.99,
-        image: "https://images.unsplash.com/photo-1502920917128-1aa500764cbd?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
-        description: "Professional digital camera for stunning photos"
-    },
-    {
-        id: 6,
-        name: "Gaming Console",
-        price: 399.99,
-        image: "https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
-        description: "Next-gen gaming console for immersive gameplay"
-    }
-];
+// Products data - will be fetched from API
+let products = [];
 
 // Cart data
 let cart = [];
+
+// User data
+let currentUser = null;
+let authToken = null;
+
+// API Base URL - will be proxied through nginx
+const API_BASE = '/api';
 
 // DOM elements
 const productsGrid = document.getElementById('products-grid');
@@ -64,8 +28,12 @@ const tabContents = document.querySelectorAll('.tab-content');
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
-    displayProducts();
+    loadProducts();
+    loadCartFromStorage();
     updateCartCount();
+    
+    // Check if user is logged in
+    checkAuthStatus();
     
     // Event listeners for modals
     accountLink.addEventListener('click', function(e) {
@@ -80,6 +48,17 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     checkoutBtn.addEventListener('click', function() {
+        if (cart.length === 0) {
+            alert('Your cart is empty!');
+            return;
+        }
+        
+        if (!currentUser) {
+            alert('Please login to proceed to checkout');
+            accountModal.style.display = 'block';
+            return;
+        }
+        
         cartModal.style.display = 'none';
         checkoutModal.style.display = 'block';
     });
@@ -124,25 +103,86 @@ document.addEventListener('DOMContentLoaded', function() {
     // Form submissions
     document.getElementById('login-form').addEventListener('submit', function(e) {
         e.preventDefault();
-        alert('Login functionality would be implemented here');
-        accountModal.style.display = 'none';
+        const email = this.querySelector('input[type="email"]').value;
+        const password = this.querySelector('input[type="password"]').value;
+        loginUser(email, password);
     });
     
     document.getElementById('register-form').addEventListener('submit', function(e) {
         e.preventDefault();
-        alert('Registration functionality would be implemented here');
-        accountModal.style.display = 'none';
+        const name = this.querySelector('input[type="text"]').value;
+        const email = this.querySelector('input[type="email"]').value;
+        const password = this.querySelector('input[type="password"]').value;
+        registerUser(name, email, password);
     });
     
     document.getElementById('checkout-form').addEventListener('submit', function(e) {
         e.preventDefault();
-        alert('Order placed successfully! Thank you for shopping with Cartella.');
-        cart = [];
-        updateCartCount();
-        updateCartModal();
-        checkoutModal.style.display = 'none';
+        processCheckout();
     });
 });
+
+// Load products from API
+async function loadProducts() {
+    try {
+        const response = await fetch(`${API_BASE}/products`);
+        products = await response.json();
+        displayProducts();
+    } catch (error) {
+        console.error('Error loading products:', error);
+        // Fallback to default products if API fails
+        products = getDefaultProducts();
+        displayProducts();
+    }
+}
+
+// Get default products (fallback)
+function getDefaultProducts() {
+    return [
+        {
+            id: 1,
+            name: "Wireless Bluetooth Headphones",
+            price: 79.99,
+            image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
+            description: "High-quality wireless headphones with noise cancellation"
+        },
+        {
+            id: 2,
+            name: "Smartphone 128GB",
+            price: 699.99,
+            image: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1480&q=80",
+            description: "Latest smartphone with advanced camera and fast processor"
+        },
+        {
+            id: 3,
+            name: "Laptop 15-inch",
+            price: 999.99,
+            image: "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1471&q=80",
+            description: "Powerful laptop for work and entertainment"
+        },
+        {
+            id: 4,
+            name: "Smart Watch",
+            price: 199.99,
+            image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1399&q=80",
+            description: "Feature-rich smartwatch with health monitoring"
+        },
+        {
+            id: 5,
+            name: "Digital Camera",
+            price: 549.99,
+            image: "https://images.unsplash.com/photo-1502920917128-1aa500764cbd?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
+            description: "Professional digital camera for stunning photos"
+        },
+        {
+            id: 6,
+            name: "Gaming Console",
+            price: 399.99,
+            image: "https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80",
+            description: "Next-gen gaming console for immersive gameplay"
+        }
+    ];
+}
 
 // Display products on the homepage
 function displayProducts() {
@@ -153,7 +193,7 @@ function displayProducts() {
         productCard.className = 'product-card';
         productCard.innerHTML = `
             <div class="product-image">
-                <img src="${product.image}" alt="${product.name}">
+                <img src="${product.image}" alt="${product.name}" loading="lazy">
             </div>
             <div class="product-info">
                 <h3>${product.name}</h3>
@@ -192,7 +232,37 @@ function addToCart(productId) {
         }
         
         updateCartCount();
+        saveCartToStorage();
         showAddedToCartMessage(product.name);
+        
+        // Sync with backend if user is logged in
+        if (currentUser) {
+            syncCartWithBackend();
+        }
+    }
+}
+
+// Sync cart with backend
+async function syncCartWithBackend() {
+    if (!currentUser) return;
+    
+    try {
+        for (const item of cart) {
+            await fetch(`${API_BASE}/cart`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': authToken
+                },
+                body: JSON.stringify({
+                    user_id: currentUser.id,
+                    product_id: item.id,
+                    quantity: item.quantity
+                })
+            });
+        }
+    } catch (error) {
+        console.error('Error syncing cart with backend:', error);
     }
 }
 
@@ -201,8 +271,8 @@ function showAddedToCartMessage(productName) {
     const message = document.createElement('div');
     message.className = 'added-to-cart-message';
     message.innerHTML = `
-        <div style="position: fixed; bottom: 20px; right: 20px; background: #232f3e; color: white; padding: 15px; border-radius: 4px; z-index: 1001;">
-            <i class="fas fa-check-circle"></i> ${productName} added to cart!
+        <div style="position: fixed; bottom: 20px; right: 20px; background: #232f3e; color: white; padding: 15px; border-radius: 4px; z-index: 1001; display: flex; align-items: center;">
+            <i class="fas fa-check-circle" style="margin-right: 10px;"></i> ${productName} added to cart!
         </div>
     `;
     document.body.appendChild(message);
@@ -315,6 +385,12 @@ function updateQuantity(productId, change, newQuantity = null) {
         } else {
             updateCartCount();
             updateCartModal();
+            saveCartToStorage();
+            
+            // Sync with backend if user is logged in
+            if (currentUser) {
+                syncCartWithBackend();
+            }
         }
     }
 }
@@ -324,4 +400,182 @@ function removeFromCart(productId) {
     cart = cart.filter(item => item.id !== productId);
     updateCartCount();
     updateCartModal();
+    saveCartToStorage();
+    
+    // Sync with backend if user is logged in
+    if (currentUser) {
+        removeFromBackendCart(productId);
+    }
+}
+
+// Remove item from backend cart
+async function removeFromBackendCart(productId) {
+    if (!currentUser) return;
+    
+    try {
+        await fetch(`${API_BASE}/cart?user_id=${currentUser.id}&product_id=${productId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': authToken
+            }
+        });
+    } catch (error) {
+        console.error('Error removing item from backend cart:', error);
+    }
+}
+
+// Save cart to localStorage
+function saveCartToStorage() {
+    localStorage.setItem('cartella_cart', JSON.stringify(cart));
+}
+
+// Load cart from localStorage
+function loadCartFromStorage() {
+    const savedCart = localStorage.getItem('cartella_cart');
+    if (savedCart) {
+        cart = JSON.parse(savedCart);
+    }
+}
+
+// User authentication functions
+async function loginUser(email, password) {
+    try {
+        const response = await fetch(`${API_BASE}/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email, password })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            currentUser = data.user;
+            authToken = data.token;
+            
+            // Save auth data
+            localStorage.setItem('cartella_user', JSON.stringify(currentUser));
+            localStorage.setItem('cartella_token', authToken);
+            
+            // Update UI
+            accountLink.textContent = `Hello, ${currentUser.name}`;
+            accountModal.style.display = 'none';
+            
+            // Sync cart with backend
+            syncCartWithBackend();
+            
+            alert('Login successful!');
+        } else {
+            alert('Login failed. Please check your credentials.');
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        alert('Login failed. Please try again.');
+    }
+}
+
+async function registerUser(name, email, password) {
+    try {
+        const response = await fetch(`${API_BASE}/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name, email, password })
+        });
+        
+        if (response.ok) {
+            alert('Registration successful! Please login.');
+            // Switch to login tab
+            document.querySelector('[data-tab="login"]').click();
+            // Pre-fill email
+            document.querySelector('#login input[type="email"]').value = email;
+        } else {
+            const error = await response.json();
+            alert(`Registration failed: ${error.message}`);
+        }
+    } catch (error) {
+        console.error('Registration error:', error);
+        alert('Registration failed. Please try again.');
+    }
+}
+
+function checkAuthStatus() {
+    const savedUser = localStorage.getItem('cartella_user');
+    const savedToken = localStorage.getItem('cartella_token');
+    
+    if (savedUser && savedToken) {
+        currentUser = JSON.parse(savedUser);
+        authToken = savedToken;
+        accountLink.textContent = `Hello, ${currentUser.name}`;
+    }
+}
+
+// Checkout process
+async function processCheckout() {
+    if (!currentUser) {
+        alert('Please login to complete your order.');
+        return;
+    }
+    
+    if (cart.length === 0) {
+        alert('Your cart is empty.');
+        return;
+    }
+    
+    try {
+        const shippingInfo = {
+            name: document.querySelector('#checkout-form input[placeholder="Full Name"]').value,
+            address: document.querySelector('#checkout-form input[placeholder="Address"]').value,
+            city: document.querySelector('#checkout-form input[placeholder="City"]').value,
+            postalCode: document.querySelector('#checkout-form input[placeholder="Postal Code"]').value,
+            country: document.querySelector('#checkout-form input[placeholder="Country"]').value
+        };
+        
+        const paymentInfo = {
+            method: 'Credit Card',
+            cardNumber: document.querySelector('#checkout-form input[placeholder="Card Number"]').value
+        };
+        
+        const response = await fetch(`${API_BASE}/checkout`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': authToken
+            },
+            body: JSON.stringify({
+                user_id: currentUser.id,
+                cart_items: cart,
+                shipping_info: shippingInfo,
+                payment_info: paymentInfo
+            })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            alert(`Order placed successfully! Order ID: ${result.order_id}`);
+            
+            // Clear cart
+            cart = [];
+            updateCartCount();
+            saveCartToStorage();
+            
+            // Clear backend cart
+            if (currentUser) {
+                await fetch(`${API_BASE}/cart/clear?user_id=${currentUser.id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': authToken
+                    }
+                });
+            }
+            
+            checkoutModal.style.display = 'none';
+        } else {
+            alert('Checkout failed. Please try again.');
+        }
+    } catch (error) {
+        console.error('Checkout error:', error);
+        alert('Checkout failed. Please try again.');
+    }
 }
